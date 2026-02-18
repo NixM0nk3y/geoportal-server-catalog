@@ -14,23 +14,40 @@
  */
 package com.esri.geoportal.lib.elastic.http.request;
 import com.esri.geoportal.base.util.JsonUtil;
+import com.esri.geoportal.base.util.Val;
 import com.esri.geoportal.context.AppResponse;
 import com.esri.geoportal.context.GeoportalContext;
+import com.esri.geoportal.event.ApprovalStatusChangedEvent;
 import com.esri.geoportal.lib.elastic.request.BulkEditRequest;
 import com.esri.geoportal.lib.elastic.util.FieldNames;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
 import javax.json.Json;
 import javax.json.JsonObjectBuilder;
+import javax.ws.rs.core.Response;
+
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.ApplicationEventPublisherAware;
 
 /**
  * Set the approval status for one or more items.
  */
-public class SetApprovalStatusRequest extends BulkEditRequest {
+public class SetApprovalStatusRequest extends BulkEditRequest implements ApplicationEventPublisherAware {
   
+  private ApplicationEventPublisher publisher;
+
   /** Constructor. */
   public SetApprovalStatusRequest() {
     super();
     this.setUseHttpClient(true);
+  }
+  
+  @Override
+  public void setApplicationEventPublisher(ApplicationEventPublisher publisher) {
+    this.publisher = publisher;
   }
   
   @Override
@@ -76,7 +93,28 @@ public class SetApprovalStatusRequest extends BulkEditRequest {
     
     //System.err.println("updateSource="+this.getUpdateSource());
     //if (true) throw new RuntimeException("SetApprovalStatusRequest: temporary stop");
-    return super.execute();
+    
+    response = super.execute();
+    
+    if (response.getStatus() == Response.Status.OK && publisher != null) {
+      try {
+        List<String> ids = new ArrayList<>();
+        String[] values = getParameterValues("id");
+        if (values != null && values.length == 1) {
+          values = Val.tokenize(values[0],",",false);
+        }
+        if (values != null) {
+          ids.addAll(Arrays.asList(values));
+        }
+        
+        publisher.publishEvent(new ApprovalStatusChangedEvent(this, getUser(), status, ids));
+      } catch (Exception e) {
+        // Log error but don't fail the request
+        e.printStackTrace();
+      }
+    }
+    
+    return response;
   }
   
 }
