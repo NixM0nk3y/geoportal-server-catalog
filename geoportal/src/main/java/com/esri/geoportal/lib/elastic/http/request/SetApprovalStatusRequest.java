@@ -29,6 +29,8 @@ import javax.json.Json;
 import javax.json.JsonObjectBuilder;
 import javax.ws.rs.core.Response;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.ApplicationEventPublisherAware;
 
@@ -36,7 +38,10 @@ import org.springframework.context.ApplicationEventPublisherAware;
  * Set the approval status for one or more items.
  */
 public class SetApprovalStatusRequest extends BulkEditRequest implements ApplicationEventPublisherAware {
-  
+
+  /** Logger. */
+  private static final Logger LOGGER = LoggerFactory.getLogger(SetApprovalStatusRequest.class);
+
   private ApplicationEventPublisher publisher;
 
   /** Constructor. */
@@ -110,7 +115,7 @@ public class SetApprovalStatusRequest extends BulkEditRequest implements Applica
         publisher.publishEvent(new ApprovalStatusChangedEvent(this, getUser(), status, ids));
       } catch (Exception e) {
         // Log error but don't fail the request
-        e.printStackTrace();
+        LOGGER.error("Failed to publish approval status changed event", e);
       }
     }
     
