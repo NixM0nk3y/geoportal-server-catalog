@@ -161,9 +161,10 @@
         <beans:value>${harvester_node:}</beans:value>
       </beans:list>
     </beans:property>
-  </beans:bean>	
+  </beans:bean>
   <beans:bean id="loggingApprovalStatusListener" class="com.esri.geoportal.event.LoggingApprovalStatusListener" />
-  
+  <beans:bean id="loggingItemEventListener" class="com.esri.geoportal.event.LoggingItemEventListener" />
+
   <beans:bean id="awsEventBridgeListener" class="com.esri.geoportal.event.AwsEventBridgeListener">
     <beans:property name="enabled" value="${gpt_eventBridgeEnabled:false}" />
     <beans:property name="eventBusName" value="${gpt_eventBusName:}" />

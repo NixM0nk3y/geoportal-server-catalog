@@ -13,23 +13,46 @@
  * limitations under the License.
  */
 package com.esri.geoportal.lib.elastic.http.request;
+import com.esri.geoportal.base.util.Val;
 import com.esri.geoportal.context.AppResponse;
+import com.esri.geoportal.event.ItemDeletedEvent;
 import com.esri.geoportal.lib.elastic.ElasticContext;
 import com.esri.geoportal.lib.elastic.request.BulkEditRequest;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
 import javax.json.Json;
 import javax.json.JsonObjectBuilder;
+import javax.ws.rs.core.Response;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.ApplicationEventPublisherAware;
 
 /**
  * Delete one or more items.
  */
-public class DeleteItemsRequest extends BulkEditRequest {
-  
+public class DeleteItemsRequest extends BulkEditRequest implements ApplicationEventPublisherAware {
+
+  /** Logger. */
+  private static final Logger LOGGER = LoggerFactory.getLogger(DeleteItemsRequest.class);
+
+  /** Instance variables. */
+  private ApplicationEventPublisher publisher;
+
   /** Constructor. */
   public DeleteItemsRequest() {
     super();
     this.setResponseStatusAction("deleted");
     this.setUseHttpClient(true);
+  }
+
+  @Override
+  public void setApplicationEventPublisher(ApplicationEventPublisher publisher) {
+    this.publisher = publisher;
   }
     
   /**
@@ -63,11 +86,33 @@ public class DeleteItemsRequest extends BulkEditRequest {
     /*
     http://localhost:8080/geoportal/rest/metadata/deteteItems?id=68e65338e166458d8425775114487b31
     */
-    
+
     setAdminOnly(false);
     setProcessMessage("DeleteItems");
     //if (true) throw new RuntimeException("DeleteItemsRequest: temporary stop");
-    return super.execute();
+
+    AppResponse response = super.execute();
+
+    if (response.getStatus() == Response.Status.OK && publisher != null) {
+      try {
+        List<String> ids = new ArrayList<>();
+        String[] values = getParameterValues("id");
+        if (values != null && values.length == 1) {
+          values = Val.tokenize(values[0],",",false);
+        }
+        if (values != null) {
+          ids.addAll(Arrays.asList(values));
+        }
+
+        if (!ids.isEmpty()) {
+          publisher.publishEvent(new ItemDeletedEvent(this, getUser(), ids));
+        }
+      } catch (Exception e) {
+        LOGGER.error("Failed to publish item deleted event", e);
+      }
+    }
+
+    return response;
   }
   
 }

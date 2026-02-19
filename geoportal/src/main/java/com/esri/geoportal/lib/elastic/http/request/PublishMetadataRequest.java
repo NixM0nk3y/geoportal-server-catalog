@@ -33,6 +33,8 @@ import com.esri.geoportal.base.util.exception.UsageException;
 import com.esri.geoportal.base.xml.XmlUtil;
 import com.esri.geoportal.context.AppResponse;
 import com.esri.geoportal.context.GeoportalContext;
+import com.esri.geoportal.event.ItemCreatedEvent;
+import com.esri.geoportal.event.ItemUpdatedEvent;
 import com.esri.geoportal.lib.elastic.ElasticContext;
 import com.esri.geoportal.lib.elastic.http.util.AccessUtil;
 import com.esri.geoportal.lib.elastic.http.util.ItemUtil;
@@ -41,15 +43,19 @@ import com.esri.geoportal.lib.elastic.util.FieldNames;
 import com.esri.geoportal.lib.elastic.util.ItemIO;
 import com.esri.geoportal.lib.elastic.util.MurmurUtil;
 
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.ApplicationEventPublisherAware;
+
 /**
  * Publish metadata.
  */
-public class PublishMetadataRequest extends BulkEditRequest {
-  
+public class PublishMetadataRequest extends BulkEditRequest implements ApplicationEventPublisherAware {
+
   /** Logger. */
   private static final Logger LOGGER = LoggerFactory.getLogger(PublishMetadataRequest.class);
-  
+
   /** Instance variables. */
+  private ApplicationEventPublisher publisher;
   private String content;
   private String id;
   private boolean isNew;
@@ -58,7 +64,12 @@ public class PublishMetadataRequest extends BulkEditRequest {
   public PublishMetadataRequest() {
     super();
   }
-  
+
+  @Override
+  public void setApplicationEventPublisher(ApplicationEventPublisher publisher) {
+    this.publisher = publisher;
+  }
+
   /** The content to publish. */
   public String getContent() {
     return content;
@@ -155,6 +166,20 @@ public class PublishMetadataRequest extends BulkEditRequest {
     //LOGGER.trace("xmlHash="+mdoc.getXmlHash());
     //LOGGER.trace("requiresXmlWrite="+mdoc.getRequiresXmlWrite());
     itemUtil.writeItem(ec,mdoc,ec.getItemIndexName());
+
+    // Publish event after successful write
+    if (publisher != null) {
+      try {
+        if (this.getIsNew()) {
+          publisher.publishEvent(new ItemCreatedEvent(this, getUser(), mdoc.getItemId(), mdoc.getTitle()));
+        } else {
+          publisher.publishEvent(new ItemUpdatedEvent(this, getUser(), mdoc.getItemId(), mdoc.getTitle()));
+        }
+      } catch (Exception e) {
+        LOGGER.error("Failed to publish item event", e);
+      }
+    }
+
     this.writeOk(response,mdoc.getItemId());
     return response;
   }

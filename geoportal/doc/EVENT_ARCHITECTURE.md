@@ -1,8 +1,8 @@
-# Event-Driven Architecture for Approval Workflow
+# Event-Driven Architecture for Geoportal
 
 ## Overview
 
-This document outlines the architectural design and implementation details for the extensible event generation system within the Geoportal Server. The primary goal of this enhancement is to decouple the core approval logic from side effects (such as logging or external notifications) and to provide a seamless integration with AWS EventBridge for downstream processing.
+This document outlines the architectural design and implementation details for the extensible event generation system within the Geoportal Server. The system publishes events for key data lifecycle operations (create, update, delete) and approval workflow changes, enabling decoupled integration with logging, AWS EventBridge, and other downstream systems.
 
 ## Architecture
 
@@ -12,16 +12,24 @@ The system utilizes the Spring Framework's `ApplicationEventPublisher` to implem
 
 ```mermaid
 graph LR
-    User[User / Client] -->|HTTP Request| RequestHandler[SetApprovalStatusRequest]
+    User[User / Client] -->|HTTP Request| RequestHandler[Request Handlers]
     RequestHandler -->|1. Update DB| Database[(Elasticsearch)]
     RequestHandler -->|2. Publish Event| EventBus{Spring EventBus}
-    
+
     EventBus -->|Async/Sync| Listener1[LoggingApprovalStatusListener]
-    EventBus -->|Async/Sync| Listener2[AwsEventBridgeListener]
-    
-    Listener1 -->|Write| Logs[Log File]
-    Listener2 -->|PutEvents| AWS[AWS EventBridge]
+    EventBus -->|Async/Sync| Listener2[LoggingItemEventListener]
+    EventBus -->|Async/Sync| Listener3[AwsEventBridgeListener]
+
+    Listener1 -->|Write| Logs[Log File - Approvals]
+    Listener2 -->|Write| Logs2[Log File - Items]
+    Listener3 -->|PutEvents| AWS[AWS EventBridge]
 ```
+
+**Request Handlers:**
+- `SetApprovalStatusRequest` - publishes `ApprovalStatusChangedEvent`
+- `PublishMetadataRequest` - publishes `ItemCreatedEvent` or `ItemUpdatedEvent`
+- `DeleteItemRequest` - publishes `ItemDeletedEvent`
+- `DeleteItemsRequest` - publishes `ItemDeletedEvent`
 
 ## Design Considerations
 
@@ -42,23 +50,52 @@ Configuration is injected via Spring's `property-placeholder` mechanism, support
 
 ## Component Details
 
-### `GeoportalEvent`
-A base class extending `ApplicationEvent`, providing a common type for all future Geoportal-specific events.
+### Event Classes
 
-### `ApprovalStatusChangedEvent`
-The specific event payload containing:
+#### `GeoportalEvent`
+A base class extending `ApplicationEvent`, providing a common type for all Geoportal-specific events.
+
+#### `ApprovalStatusChangedEvent`
+Event published when approval status changes. Contains:
 *   **User**: The `AppUser` who performed the action.
 *   **Status**: The new status string (e.g., "approved", "reviewed").
 *   **IDs**: A list of Item IDs that were modified.
 
-### `AwsEventBridgeListener`
+#### `ItemCreatedEvent`
+Event published when a new item is created. Contains:
+*   **User**: The `AppUser` who created the item.
+*   **ItemId**: The ID of the created item.
+*   **Title**: The title of the item (may be null).
+
+#### `ItemUpdatedEvent`
+Event published when an existing item is updated. Contains:
+*   **User**: The `AppUser` who updated the item.
+*   **ItemId**: The ID of the updated item.
+*   **Title**: The title of the item (may be null).
+
+#### `ItemDeletedEvent`
+Event published when one or more items are deleted. Contains:
+*   **User**: The `AppUser` who deleted the item(s).
+*   **ItemIds**: A list of deleted item IDs.
+
+### Event Listeners
+
+#### `LoggingApprovalStatusListener`
+Logs approval status change events to the application log.
+
+#### `LoggingItemEventListener`
+Logs item lifecycle events (create, update, delete) to the application log.
+
+#### `AwsEventBridgeListener`
 The bridge component responsible for:
 1.  Checking if the feature is `enabled`.
 2.  Initializing the AWS Client.
-3.  Transforming the POJO event into a JSON payload.
+3.  Transforming Geoportal events into JSON payloads.
 4.  Dispatching the `PutEventsRequest` to the configured Event Bus.
 
-**JSON Payload Schema:**
+**JSON Payload Schemas:**
+
+*ApprovalStatusChanged:*
 ```json
 {
   "action": "SetApprovalStatus",
@@ -67,6 +104,31 @@ The bridge component responsible for:
   "ids": ["item-uuid-1", "item-uuid-2"]
 }
 ```
+
+*ItemCreated / ItemUpdated:*
+```json
+{
+  "action": "create",
+  "itemId": "item-uuid-1",
+  "userId": "admin_user",
+  "title": "My Dataset"
+}
+```
+
+*ItemDeleted:*
+```json
+{
+  "action": "delete",
+  "userId": "admin_user",
+  "itemIds": ["item-uuid-1", "item-uuid-2"]
+}
+```
+
+**EventBridge Detail Types:**
+- `ApprovalStatusChanged`
+- `ItemCreated`
+- `ItemUpdated`
+- `ItemDeleted`
 
 ## Configuration Guide
 
@@ -80,7 +142,17 @@ The following environment variables control the behavior of the event listeners:
 
 ## Future Extensibility
 
+### Adding New Event Types
+
+To add a new event type (e.g., `ItemAccessChangedEvent`):
+1.  Create a new event class extending `GeoportalEvent`.
+2.  Modify the appropriate request handler to publish the event after successful operations.
+3.  Update `AwsEventBridgeListener` to handle the new event type (add to `onApplicationEvent`).
+4.  Optionally create dedicated logging listeners for the new event type.
+
+### Adding New Integrations
+
 To add a new integration (e.g., sending an email or Webhook):
-1.  Create a new class implementing `ApplicationListener<ApprovalStatusChangedEvent>`.
+1.  Create a new class implementing `ApplicationListener<GeoportalEvent>` (or a specific event type).
 2.  Implement the logic in `onApplicationEvent`.
 3.  Register the bean in `app-context.xml`.

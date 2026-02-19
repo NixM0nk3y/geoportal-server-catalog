@@ -16,29 +16,47 @@ package com.esri.geoportal.lib.elastic.http.request;
 import com.esri.geoportal.base.util.JsonUtil;
 import com.esri.geoportal.context.AppResponse;
 import com.esri.geoportal.context.GeoportalContext;
+import com.esri.geoportal.event.ItemDeletedEvent;
 import com.esri.geoportal.lib.elastic.ElasticContext;
 import com.esri.geoportal.lib.elastic.http.ElasticClient;
 import com.esri.geoportal.lib.elastic.http.util.AccessUtil;
 import com.esri.geoportal.lib.elastic.request.BulkEditRequest;
 
 import java.io.FileNotFoundException;
+import java.util.ArrayList;
+import java.util.List;
+
 import javax.json.Json;
 import javax.json.JsonObject;
 import javax.json.JsonObjectBuilder;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.ApplicationEventPublisherAware;
+
 /**
- * Get an item.
+ * Delete an item.
  */
-public class DeleteItemRequest extends BulkEditRequest {
-  
+public class DeleteItemRequest extends BulkEditRequest implements ApplicationEventPublisherAware {
+
+  /** Logger. */
+  private static final Logger LOGGER = LoggerFactory.getLogger(DeleteItemRequest.class);
+
   /** Instance variables. */
+  private ApplicationEventPublisher publisher;
   private String id;
   
   /** Constructor. */
   public DeleteItemRequest() {
     super();
   }
-  
+
+  @Override
+  public void setApplicationEventPublisher(ApplicationEventPublisher publisher) {
+    this.publisher = publisher;
+  }
+
   /** The item id. */
   public String getId() {
     return id;
@@ -114,11 +132,22 @@ public class DeleteItemRequest extends BulkEditRequest {
   }
   
   /**
-   * Write the response. 
+   * Write the response.
    * @param response the response
    * @param id the item id
    */
   public void writeOk(AppResponse response, String id) {
+    // Publish event after successful deletion
+    if (publisher != null) {
+      try {
+        List<String> ids = new ArrayList<>();
+        ids.add(id);
+        publisher.publishEvent(new ItemDeletedEvent(this, getUser(), ids));
+      } catch (Exception e) {
+        LOGGER.error("Failed to publish item deleted event", e);
+      }
+    }
+
     JsonObjectBuilder jsonBuilder = Json.createObjectBuilder();
     jsonBuilder.add("id",id);
     jsonBuilder.add("status","deleted");
