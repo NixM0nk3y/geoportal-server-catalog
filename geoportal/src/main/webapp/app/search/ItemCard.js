@@ -976,7 +976,7 @@ function(declare, lang, array, string, topic, xhr, on,dojoQuery, appTopics, domS
             if (AppContext.appConfig.system.secureCatalogApp || (AppContext.geoportal.supportsApprovalStatus || 
                     AppContext.geoportal.supportsGroupBasedAccess)) {
             	  var client = new AppClient();    
-                  url = client.appendAccessToken(url); 
+                  uri = client.appendAccessToken(uri); 
              }
             this.self._renderDataHtml(item, uri);
           } 
